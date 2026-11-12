@@ -27,17 +27,41 @@ Public registration always assigns the `student` role. Create instructor/admin a
    docker compose up --build
    ```
 
-4. Register and log in through the gateway:
+4. Once the services are healthy, seed the optional local demo accounts and sample content:
 
    ```powershell
-   $user = Invoke-RestMethod -Method Post http://localhost:8080/api/users/register `
-     -ContentType 'application/json' -Body '{"email":"student@example.com","password":"pass12345"}'
-   $login = Invoke-RestMethod -Method Post http://localhost:8080/api/users/login `
-     -ContentType 'application/json' -Body '{"email":"student@example.com","password":"pass12345"}'
-   $token = $login.access_token
-   ```
+docker compose cp .\infra\seed-demo.sql postgres:/tmp/seed-demo.sql
+docker compose exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d users -f /tmp/seed-demo.sql'
+docker compose cp .\infra\seed-demo.js mongo:/tmp/seed-demo.js
+docker compose exec -T mongo mongosh --quiet --file /tmp/seed-demo.js
+```
 
-   Create an instructor account out-of-band before trying course creation. Then create a course with nested module/lesson IDs, enrol in its ObjectId using the student's token, mark lessons complete through `/api/progress/{course_id}/lessons/{lesson_id}/complete`, and view the notification log at `/api/notifications/me`.
+   The seed is safe to rerun: demo courses are updated, and existing enrollments, notifications, and progress are preserved. It adds a student and an instructor account, three MongoDB courses, sample enrollments, one completed course, partial progress, and activity notifications.
+
+   Demo student: `demo.student@example.com` / `LearnHub123!`
+
+   Demo instructor: `demo.instructor@example.com` / `LearnHub123!`
+
+5. Open [http://localhost:8080](http://localhost:8080) for the LearnHub web app. Use the catalog search and category filters, inspect course outlines, enrol, track lesson progress, and view activity. The app also shows live readiness checks for the five services. The instructor account can publish additional courses.
+
+New accounts are students. Do not use the demo credentials outside local development.
+
+The local Compose stack also binds each service to loopback-only host ports for direct API access:
+
+| Component | Local URL |
+| --- | --- |
+| Web app / API gateway | `http://localhost:8080` |
+| User service | `http://localhost:8001/docs` |
+| Course service | `http://localhost:8002/docs` |
+| Enrollment service | `http://localhost:8003/docs` |
+| Progress service | `http://localhost:8004/docs` |
+| Notification service | `http://localhost:8005/docs` |
+| PostgreSQL | `localhost:5433` (5432 may already be used on the host) |
+| MongoDB | `localhost:27017` |
+| RabbitMQ AMQP | `localhost:5672` |
+| RabbitMQ management UI | [http://localhost:15672](http://localhost:15672) |
+
+Database and message-broker ports are for local development only. All host bindings use `127.0.0.1` and are not exposed to the LAN.
 
 The Compose stack is intended for local development. Do not reuse its credentials in a deployed environment.
 
@@ -62,7 +86,7 @@ docker compose exec postgres psql -U learnhub -d users `
 
 ## Build images
 
-The service Dockerfiles use the repository root as the build context so they can include `services/common`:
+The Python service Dockerfiles use the repository root as the build context so they can include `services/common`. The gateway Dockerfile uses `services/gateway` as its context and includes the app assets:
 
 ```powershell
 docker build -f services/user-service/Dockerfile -t learnhub/user-service:dev .

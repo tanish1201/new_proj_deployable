@@ -1,6 +1,8 @@
 services:
   postgres:
     image: postgres:16
+    ports:
+      - "127.0.0.1:5433:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?Copy .env.example to .env}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
@@ -15,6 +17,8 @@ services:
 
   mongo:
     image: mongo:7
+    ports:
+      - "127.0.0.1:27017:27017"
     volumes:
       - mongodata:/data/db
     healthcheck:
@@ -25,6 +29,9 @@ services:
 
   rabbitmq:
     image: rabbitmq:3-management
+    ports:
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?Set RABBITMQ_USER in .env}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD in .env}
@@ -40,6 +47,8 @@ services:
     build:
       context: .
       dockerfile: services/user-service/Dockerfile
+    ports:
+      - "127.0.0.1:8001:8000"
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/users
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
@@ -54,6 +63,8 @@ services:
     build:
       context: .
       dockerfile: services/course-service/Dockerfile
+    ports:
+      - "127.0.0.1:8002:8000"
     environment:
       MONGO_URL: mongodb://mongo:27017
       MONGO_DB: courses
@@ -66,6 +77,8 @@ services:
     build:
       context: .
       dockerfile: services/enrollment-service/Dockerfile
+    ports:
+      - "127.0.0.1:8003:8000"
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/enrollments
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
@@ -83,6 +96,8 @@ services:
     build:
       context: .
       dockerfile: services/progress-service/Dockerfile
+    ports:
+      - "127.0.0.1:8004:8000"
     environment:
       MONGO_URL: mongodb://mongo:27017
       MONGO_DB: progress
@@ -101,6 +116,8 @@ services:
     build:
       context: .
       dockerfile: services/notification-service/Dockerfile
+    ports:
+      - "127.0.0.1:8005:8000"
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/notifications
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
@@ -115,7 +132,7 @@ services:
     build:
       context: ./services/gateway
     ports:
-      - "8080:80"
+      - "127.0.0.1:8080:80"
     depends_on:
       - user-service
       - course-service
