@@ -1,0 +1,69 @@
+name: build-and-deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            services/*/requirements.txt
+            requirements-dev.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install \
+            -r services/user-service/requirements.txt \
+            -r services/course-service/requirements.txt \
+            -r services/enrollment-service/requirements.txt \
+            -r services/progress-service/requirements.txt \
+            -r services/notification-service/requirements.txt \
+            -r requirements-dev.txt
+      - name: Run tests
+        run: python -m pytest -q
+
+  deploy:
+    if: github.event_name == 'push'
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      ACR_NAME: ${{ vars.ACR_NAME }}
+      RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      AKS_CLUSTER: ${{ vars.AKS_CLUSTER_NAME }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Build and push service images
+        run: |
+          az acr build --registry "$ACR_NAME" --image "user-service:$GITHUB_SHA" --file services/user-service/Dockerfile .
+          az acr build --registry "$ACR_NAME" --image "course-service:$GITHUB_SHA" --file services/course-service/Dockerfile .
+          az acr build --registry "$ACR_NAME" --image "enrollment-service:$GITHUB_SHA" --file services/enrollment-service/Dockerfile .
+          az acr build --registry "$ACR_NAME" --image "progress-service:$GITHUB_SHA" --file services/progress-service/Dockerfile .
+          az acr build --registry "$ACR_NAME" --image "notification-service:$GITHUB_SHA" --file services/notification-service/Dockerfile .
+          az acr build --registry "$ACR_NAME" --image "gateway:$GITHUB_SHA" --file services/gateway/Dockerfile services/gateway
+      - uses: azure/aks-set-context@v4
+        with:
+          resource-group: ${{ env.RESOURCE_GROUP }}
+          cluster-name: ${{ env.AKS_CLUSTER }}
+      - name: Roll out images
+        run: |
+          for service in user-service course-service enrollment-service progress-service notification-service gateway; do
+            kubectl set image "deployment/$service" "$service=$ACR_NAME.azurecr.io/$service:$GITHUB_SHA" -n learnhub
+            kubectl rollout status "deployment/$service" -n learnhub --timeout=5m
+          done
